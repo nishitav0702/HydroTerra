@@ -1,15 +1,20 @@
 """
 HydroTerra - Nishita's Main Application
 
-STEP 2
-Interactive visualization interface.
+FINAL INTEGRATION
+
+HydroTerra visualizes:
+    - Terrain elevation
+    - Water accumulation
+    - Flood vulnerability
+    - Settlement locations
 
 Controls:
 
+    T = Terrain ON/OFF
     W = Water ON/OFF
     R = Risk ON/OFF
     S = Settlements ON/OFF
-    T = Terrain ON/OFF
     H = Hide/Show interface
     ESC = Quit
 
@@ -44,11 +49,7 @@ screen = pygame.display.set_mode(
 )
 
 pygame.display.set_caption(
-    "HydroTerra - Terrain Erosion & Flood Vulnerability"
-)
-
-print(
-    "Pygame window created successfully."
+    "HydroTerra | Terrain Erosion & Flood Vulnerability"
 )
 
 
@@ -58,139 +59,106 @@ print(
 
 context = moderngl.create_context()
 
-print(
-    "ModernGL context created successfully."
-)
-
-print(
-    "OpenGL version:",
-    context.info["GL_VERSION"]
-)
-
-print(
-    "OpenGL renderer:",
-    context.info["GL_RENDERER"]
-)
-
-
-# ============================================================
-# DEPTH TESTING
-# ============================================================
-
 context.enable(
     moderngl.DEPTH_TEST
 )
 
 
 # ============================================================
-# LOAD TERRAIN
+# LOAD SIMULATION DATA
 # ============================================================
 
-heightmap = np.load(
-    "data/heightmap.npy"
-)
+try:
 
-print(
-    "Heightmap loaded."
-)
+    heightmap = np.load(
+        "data/heightmap.npy"
+    )
 
-print(
-    "Shape:",
-    heightmap.shape
-)
+    watermap = np.load(
+        "data/water.npy"
+    )
 
+    riskmap = np.load(
+        "data/risk.npy"
+    )
 
-# ============================================================
-# LOAD WATER
-# ============================================================
+    settlementmap = np.load(
+        "data/settlement.npy"
+    )
 
-watermap = np.load(
-    "data/water.npy"
-)
+except FileNotFoundError as error:
 
-print(
-    "Water map loaded."
-)
+    print()
+    print("=" * 60)
+    print("HYDROTERRA DATA ERROR")
+    print("=" * 60)
+    print("A required simulation output is missing.")
+    print("Make sure the data folder contains:")
+    print("  heightmap.npy")
+    print("  water.npy")
+    print("  risk.npy")
+    print("  settlement.npy")
+    print()
+    print("Missing file:")
+    print(error)
+    print("=" * 60)
 
-print(
-    "Water shape:",
-    watermap.shape
-)
-
-print(
-    "Water range:",
-    float(watermap.min()),
-    "to",
-    float(watermap.max())
-)
-
-
-# ============================================================
-# LOAD RISK
-# ============================================================
-
-riskmap = np.load(
-    "data/risk.npy"
-)
-
-print(
-    "Risk map loaded."
-)
-
-print(
-    "Risk shape:",
-    riskmap.shape
-)
-
-print(
-    "Risk range:",
-    float(riskmap.min()),
-    "to",
-    float(riskmap.max())
-)
+    pygame.quit()
+    sys.exit()
 
 
 # ============================================================
-# LOAD SETTLEMENT
+# DATA VALIDATION
 # ============================================================
 
-settlementmap = np.load(
-    "data/settlement.npy"
-)
+expected_shape = heightmap.shape
 
-print(
-    "Settlement map loaded."
-)
+if watermap.shape != expected_shape:
+    raise ValueError(
+        "water.npy does not match heightmap.npy."
+    )
 
-print(
-    "Settlement shape:",
-    settlementmap.shape
-)
+if riskmap.shape != expected_shape:
+    raise ValueError(
+        "risk.npy does not match heightmap.npy."
+    )
 
-settlement_count = int(
-    np.sum(settlementmap)
-)
-
-print(
-    "Settlement cells:",
-    settlement_count
-)
+if settlementmap.shape != expected_shape:
+    raise ValueError(
+        "settlement.npy does not match heightmap.npy."
+    )
 
 
 # ============================================================
-# STATISTICS
+# SIMULATION STATISTICS
 # ============================================================
 
 max_water = float(
     watermap.max()
 )
 
-mean_risk = float(
-    riskmap.mean()
+mean_water = float(
+    watermap.mean()
 )
 
 max_risk = float(
     riskmap.max()
+)
+
+mean_risk = float(
+    riskmap.mean()
+)
+
+settlement_count = int(
+    np.sum(settlementmap >= 0.5)
+)
+
+visible_water_cells = int(
+    np.sum(watermap >= 0.03)
+)
+
+visible_risk_cells = int(
+    np.sum(riskmap >= 0.08)
 )
 
 
@@ -199,10 +167,6 @@ max_risk = float(
 # ============================================================
 
 camera = Camera()
-
-print(
-    "Camera created."
-)
 
 
 # ============================================================
@@ -219,18 +183,8 @@ renderer = TerrainRenderer(
 
 
 # ============================================================
-# UI SETUP
+# FONTS
 # ============================================================
-
-font = pygame.font.SysFont(
-    "Arial",
-    20
-)
-
-small_font = pygame.font.SysFont(
-    "Arial",
-    16
-)
 
 title_font = pygame.font.SysFont(
     "Arial",
@@ -238,11 +192,32 @@ title_font = pygame.font.SysFont(
     bold=True
 )
 
+section_font = pygame.font.SysFont(
+    "Arial",
+    19,
+    bold=True
+)
+
+body_font = pygame.font.SysFont(
+    "Arial",
+    16
+)
+
+small_font = pygame.font.SysFont(
+    "Arial",
+    14
+)
+
+
+# ============================================================
+# UI STATE
+# ============================================================
+
 show_ui = True
 
 
 # ============================================================
-# UI DRAWING
+# TEXT HELPER
 # ============================================================
 
 def draw_text(
@@ -250,7 +225,8 @@ def draw_text(
     x,
     y,
     font_object,
-    surface
+    surface,
+    alpha=255
 ):
 
     text_surface = font_object.render(
@@ -259,172 +235,353 @@ def draw_text(
         (255, 255, 255)
     )
 
+    if alpha != 255:
+        text_surface.set_alpha(alpha)
+
     surface.blit(
         text_surface,
         (x, y)
     )
 
 
+# ============================================================
+# STATUS INDICATOR
+# ============================================================
+
+def draw_status(
+    label,
+    enabled,
+    x,
+    y
+):
+
+    status_colour = (
+        (80, 220, 120)
+        if enabled
+        else
+        (150, 150, 150)
+    )
+
+    status_text = (
+        "ON"
+        if enabled
+        else
+        "OFF"
+    )
+
+    label_surface = body_font.render(
+        label,
+        True,
+        (235, 235, 235)
+    )
+
+    screen.blit(
+        label_surface,
+        (x, y)
+    )
+
+    pygame.draw.rect(
+        screen,
+        status_colour,
+        (x + 145, y + 4, 9, 9)
+    )
+
+    status_surface = small_font.render(
+        status_text,
+        True,
+        status_colour
+    )
+
+    screen.blit(
+        status_surface,
+        (x + 164, y - 1)
+    )
+
+
+# ============================================================
+# RISK LEGEND
+# ============================================================
+
+def draw_risk_legend(
+    x,
+    y
+):
+
+    draw_text(
+        "RISK SCALE",
+        x,
+        y,
+        section_font,
+        screen
+    )
+
+    legend_width = 210
+    legend_height = 12
+
+    segments = 30
+
+    for i in range(segments):
+
+        t = i / (segments - 1)
+
+        if t < 0.5:
+
+            local_t = t / 0.5
+
+            r = 255
+            g = int(
+                215 - 135 * local_t
+            )
+            b = int(
+                5 - 3 * local_t
+            )
+
+        else:
+
+            local_t = (
+                t - 0.5
+            ) / 0.5
+
+            r = int(
+                255 - 25 * local_t
+            )
+            g = int(
+                80 - 70 * local_t
+            )
+            b = int(
+                2 + 20 * local_t
+            )
+
+        segment_width = (
+            legend_width / segments
+        )
+
+        pygame.draw.rect(
+            screen,
+            (r, g, b),
+            (
+                int(
+                    x + i * segment_width
+                ),
+                y + 30,
+                int(segment_width + 1),
+                legend_height
+            )
+        )
+
+    draw_text(
+        "Low",
+        x,
+        y + 48,
+        small_font,
+        screen
+    )
+
+    draw_text(
+        "Medium",
+        x + 88,
+        y + 48,
+        small_font,
+        screen
+    )
+
+    draw_text(
+        "High",
+        x + 185,
+        y + 48,
+        small_font,
+        screen
+    )
+
+
+# ============================================================
+# MAIN UI
+# ============================================================
+
 def draw_ui():
 
     # --------------------------------------------------------
-    # UI PANEL
+    # LEFT PANEL
     # --------------------------------------------------------
 
     panel = pygame.Surface(
-        (290, 440),
+        (330, 575),
         pygame.SRCALPHA
     )
 
     panel.fill(
-        (10, 15, 25, 220)
+        (8, 12, 22, 225)
     )
 
     screen.blit(
         panel,
-        (20, 20)
+        (18, 18)
     )
 
     # --------------------------------------------------------
-    # TITLE
+    # HEADER
     # --------------------------------------------------------
 
     draw_text(
         "HYDROTERRA",
-        40,
-        40,
+        38,
+        36,
         title_font,
         screen
     )
 
     draw_text(
-        "Terrain & Flood Simulator",
+        "Terrain Erosion & Flood Vulnerability",
         40,
-        76,
+        72,
         small_font,
         screen
     )
 
     # --------------------------------------------------------
-    # SIMULATION DATA
+    # DIVIDER
     # --------------------------------------------------------
 
-    draw_text(
-        "SIMULATION",
-        40,
-        115,
-        font,
-        screen
-    )
-
-    draw_text(
-        f"Terrain: {heightmap.shape[0]} x {heightmap.shape[1]}",
-        40,
-        145,
-        small_font,
-        screen
-    )
-
-    draw_text(
-        f"Max water: {max_water:.3f}",
-        40,
-        170,
-        small_font,
-        screen
-    )
-
-    draw_text(
-        f"Mean risk: {mean_risk:.3f}",
-        40,
-        195,
-        small_font,
-        screen
-    )
-
-    draw_text(
-        f"Max risk: {max_risk:.3f}",
-        40,
-        220,
-        small_font,
-        screen
-    )
-
-    draw_text(
-        f"Settlement cells: {settlement_count}",
-        40,
-        245,
-        small_font,
-        screen
+    pygame.draw.line(
+        screen,
+        (100, 110, 125),
+        (38, 101),
+        (320, 101),
+        1
     )
 
     # --------------------------------------------------------
-    # LAYER STATUS
+    # SIMULATION SECTION
     # --------------------------------------------------------
 
     draw_text(
-        "LAYERS",
-        40,
-        285,
-        font,
+        "SIMULATION OUTPUT",
+        38,
+        118,
+        section_font,
         screen
     )
 
-    terrain_status = (
-        "ON" if renderer.show_terrain else "OFF"
-    )
-
-    water_status = (
-        "ON" if renderer.show_water else "OFF"
-    )
-
-    risk_status = (
-        "ON" if renderer.show_risk else "OFF"
-    )
-
-    settlement_status = (
-        "ON" if renderer.show_settlements else "OFF"
+    draw_text(
+        f"Terrain grid      {heightmap.shape[0]} x "
+        f"{heightmap.shape[1]}",
+        40,
+        150,
+        body_font,
+        screen
     )
 
     draw_text(
-        f"[T] Terrain       {terrain_status}",
+        f"Maximum water    {max_water:.3f}",
         40,
+        176,
+        body_font,
+        screen
+    )
+
+    draw_text(
+        f"Mean water       {mean_water:.3f}",
+        40,
+        201,
+        body_font,
+        screen
+    )
+
+    draw_text(
+        f"Maximum risk     {max_risk:.3f}",
+        40,
+        226,
+        body_font,
+        screen
+    )
+
+    draw_text(
+        f"Mean risk        {mean_risk:.3f}",
+        40,
+        251,
+        body_font,
+        screen
+    )
+
+    draw_text(
+        f"Settlements      {settlement_count}",
+        40,
+        276,
+        body_font,
+        screen
+    )
+
+    # --------------------------------------------------------
+    # LAYER SECTION
+    # --------------------------------------------------------
+
+    draw_text(
+        "VISUALIZATION LAYERS",
+        38,
         315,
-        small_font,
+        section_font,
         screen
     )
 
-    draw_text(
-        f"[W] Water         {water_status}",
+    draw_status(
+        "[T] Terrain",
+        renderer.show_terrain,
         40,
-        340,
-        small_font,
-        screen
+        348
     )
 
-    draw_text(
-        f"[R] Risk          {risk_status}",
+    draw_status(
+        "[W] Water",
+        renderer.show_water,
         40,
-        365,
-        small_font,
-        screen
+        374
     )
 
-    draw_text(
-        f"[S] Settlements   {settlement_status}",
+    draw_status(
+        "[R] Flood risk",
+        renderer.show_risk,
         40,
-        390,
-        small_font,
-        screen
+        400
+    )
+
+    draw_status(
+        "[S] Settlements",
+        renderer.show_settlements,
+        40,
+        426
     )
 
     # --------------------------------------------------------
-    # CONTROLS
+    # RISK LEGEND
     # --------------------------------------------------------
 
-    draw_text(
-        "[H] Hide interface",
+    draw_risk_legend(
         40,
-        425,
+        462
+    )
+
+    # --------------------------------------------------------
+    # FOOTER
+    # --------------------------------------------------------
+
+    footer = pygame.Surface(
+        (330, 55),
+        pygame.SRCALPHA
+    )
+
+    footer.fill(
+        (20, 25, 38, 220)
+    )
+
+    screen.blit(
+        footer,
+        (18, 638)
+    )
+
+    draw_text(
+        "Drag = Orbit     Wheel = Zoom     H = Hide UI",
+        32,
+        656,
         small_font,
         screen
     )
@@ -450,15 +607,25 @@ while running:
 
             running = False
 
-        # ----------------------------------------------------
-        # KEYBOARD
-        # ----------------------------------------------------
-
         elif event.type == pygame.KEYDOWN:
+
+            # ------------------------------------------------
+            # EXIT
+            # ------------------------------------------------
 
             if event.key == pygame.K_ESCAPE:
 
                 running = False
+
+            # ------------------------------------------------
+            # LAYER CONTROLS
+            # ------------------------------------------------
+
+            elif event.key == pygame.K_t:
+
+                renderer.show_terrain = (
+                    not renderer.show_terrain
+                )
 
             elif event.key == pygame.K_w:
 
@@ -478,11 +645,9 @@ while running:
                     not renderer.show_settlements
                 )
 
-            elif event.key == pygame.K_t:
-
-                renderer.show_terrain = (
-                    not renderer.show_terrain
-                )
+            # ------------------------------------------------
+            # UI
+            # ------------------------------------------------
 
             elif event.key == pygame.K_h:
 
@@ -499,7 +664,7 @@ while running:
             )
 
     # --------------------------------------------------------
-    # MOUSE ORBIT
+    # ORBIT
     # --------------------------------------------------------
 
     mouse_buttons = pygame.mouse.get_pressed()
@@ -522,14 +687,14 @@ while running:
     # --------------------------------------------------------
 
     context.clear(
-        0.05,
-        0.05,
-        0.08,
+        0.035,
+        0.045,
+        0.065,
         1.0
     )
 
     # --------------------------------------------------------
-    # RENDER
+    # 3D RENDER
     # --------------------------------------------------------
 
     renderer.render(
@@ -538,7 +703,7 @@ while running:
     )
 
     # --------------------------------------------------------
-    # UI
+    # 2D UI
     # --------------------------------------------------------
 
     if show_ui:
@@ -559,9 +724,5 @@ while running:
 # ============================================================
 
 pygame.quit()
-
-print(
-    "HydroTerra application closed."
-)
 
 sys.exit()

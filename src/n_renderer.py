@@ -1,12 +1,12 @@
 """
 HydroTerra - Nishita's Terrain Renderer
 
-STEP 2
-Interactive visualization:
-    - Terrain
-    - Water
+FINAL INTEGRATION
+Interactive 3D visualization:
+    - Procedural terrain
+    - Water accumulation
     - Flood-risk heatmap
-    - Settlements
+    - Settlement locations
 """
 
 import ctypes
@@ -381,7 +381,7 @@ class TerrainRenderer:
         )
 
         # ----------------------------------------------------
-        # VISIBILITY CONTROLS
+        # LAYER VISIBILITY
         # ----------------------------------------------------
 
         self.show_terrain = True
@@ -413,40 +413,8 @@ class TerrainRenderer:
                 "Settlement map must match heightmap shape."
             )
 
-        print(
-            "Terrain heightmap received:",
-            self.heightmap.shape
-        )
-
-        print(
-            "Water map received:",
-            self.watermap.shape
-        )
-
-        print(
-            "Risk map received:",
-            self.riskmap.shape
-        )
-
-        print(
-            "Settlement map received:",
-            self.settlementmap.shape
-        )
-
-        print(
-            "Risk range:",
-            float(self.riskmap.min()),
-            "to",
-            float(self.riskmap.max())
-        )
-
-        print(
-            "Settlement cells:",
-            int(np.sum(self.settlementmap))
-        )
-
         # ----------------------------------------------------
-        # NORMALIZE TERRAIN
+        # TERRAIN NORMALIZATION
         # ----------------------------------------------------
 
         minimum = float(
@@ -491,7 +459,7 @@ class TerrainRenderer:
         )
 
         # ----------------------------------------------------
-        # MESHES
+        # CREATE MESHES
         # ----------------------------------------------------
 
         terrain_vertices, indices = (
@@ -510,28 +478,8 @@ class TerrainRenderer:
             self.create_settlement_mesh()
         )
 
-        print(
-            "Terrain vertices:",
-            len(terrain_vertices) // 6
-        )
-
-        print(
-            "Water vertices:",
-            len(water_vertices) // 4
-        )
-
-        print(
-            "Risk vertices:",
-            len(risk_vertices) // 4
-        )
-
-        print(
-            "Settlement vertices:",
-            len(settlement_vertices) // 3
-        )
-
         # ----------------------------------------------------
-        # TERRAIN
+        # TERRAIN BUFFERS
         # ----------------------------------------------------
 
         self.terrain_vertex_buffer = (
@@ -548,9 +496,7 @@ class TerrainRenderer:
 
         self.terrain_vertex_array = (
             self.context.vertex_array(
-
                 self.terrain_program,
-
                 [
                     (
                         self.terrain_vertex_buffer,
@@ -559,13 +505,12 @@ class TerrainRenderer:
                         "in_normal"
                     )
                 ],
-
                 self.index_buffer
             )
         )
 
         # ----------------------------------------------------
-        # WATER
+        # WATER BUFFERS
         # ----------------------------------------------------
 
         self.water_vertex_buffer = (
@@ -576,9 +521,7 @@ class TerrainRenderer:
 
         self.water_vertex_array = (
             self.context.vertex_array(
-
                 self.water_program,
-
                 [
                     (
                         self.water_vertex_buffer,
@@ -587,13 +530,12 @@ class TerrainRenderer:
                         "in_water"
                     )
                 ],
-
                 self.index_buffer
             )
         )
 
         # ----------------------------------------------------
-        # RISK
+        # RISK BUFFERS
         # ----------------------------------------------------
 
         self.risk_vertex_buffer = (
@@ -604,9 +546,7 @@ class TerrainRenderer:
 
         self.risk_vertex_array = (
             self.context.vertex_array(
-
                 self.risk_program,
-
                 [
                     (
                         self.risk_vertex_buffer,
@@ -615,13 +555,12 @@ class TerrainRenderer:
                         "in_risk"
                     )
                 ],
-
                 self.index_buffer
             )
         )
 
         # ----------------------------------------------------
-        # SETTLEMENTS
+        # SETTLEMENT BUFFERS
         # ----------------------------------------------------
 
         self.settlement_vertex_buffer = (
@@ -632,9 +571,7 @@ class TerrainRenderer:
 
         self.settlement_vertex_array = (
             self.context.vertex_array(
-
                 self.settlement_program,
-
                 [
                     (
                         self.settlement_vertex_buffer,
@@ -643,11 +580,6 @@ class TerrainRenderer:
                     )
                 ]
             )
-        )
-
-        print(
-            "Terrain, water, risk and settlement meshes "
-            "uploaded successfully."
         )
 
     # ========================================================
@@ -732,7 +664,6 @@ class TerrainRenderer:
                     world_x,
                     world_y,
                     world_z,
-
                     normal[0],
                     normal[1],
                     normal[2]
@@ -923,7 +854,9 @@ class TerrainRenderer:
 
                 top_left = z * width + x
                 top_right = top_left + 1
-                bottom_left = (z + 1) * width + x
+                bottom_left = (
+                    (z + 1) * width + x
+                )
                 bottom_right = bottom_left + 1
 
                 indices.extend([
@@ -978,7 +911,7 @@ class TerrainRenderer:
             )
 
         # ----------------------------------------------------
-        # TRANSPARENCY
+        # TRANSPARENT OVERLAYS
         # ----------------------------------------------------
 
         self.context.enable(
